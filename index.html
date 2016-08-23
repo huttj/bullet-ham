@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <style>
+        canvas {
+            width: 90vw;
+            height: 90vh;
+            margin: auto;
+        }
+    </style>
+</head>
+<body>
+    <canvas width="640" height="480"></canvas>
+
+    <div style="display: none;">
+        <img id="bg" src="bg.jpg">
+        <img id="enemy" src="ham.png">
+        <img id="character" src="andy.png">
+    </div>
+
+    <script type="text/javascript">
+
+        // Some settings
+        var MAX_OBSTACLES = 50;
+        var USER_SIZE = 50;
+        var WEIGHT_LOSS_MULTIPLIER = .999;
+        var WEIGHT_GAIN = 5;
+
+        var canvas    = document.getElementsByTagName("canvas")[0];
+        var ctx       = canvas.getContext("2d");
+        var bg        = document.getElementById("bg");
+        var enemy     = document.getElementById("enemy");
+        var character = document.getElementById("character");
+
+        var height = canvas.height = window.outerHeight * .9;
+        var width  = canvas.width  = window.outerWidth  * .9;
+
+
+        // Wait for all images to be loaded (technically not necessary, since they'll be loaded eventually.
+        var allImagesLoaded = Promise.all([
+            waitForImage(character),
+            waitForImage(enemy),
+            waitForImage(bg)
+        ]);
+
+        var up    = false,
+            down  = false,
+            left  = false,
+            right = false;
+
+        var user = {
+            x: 0,
+            y: 0,
+            img: character,
+            // Should be proportional to the window size
+            rate: Math.sqrt(height*height + width*width) / 200
+        };
+
+        // When a keydown is registered, start moving the character in that direction
+        document.body.addEventListener('keydown', function(e) {
+            if (e.which < 41 && e.which > 36) {
+                e.preventDefault();
+            }
+            switch (e.which) {
+                case 38: // up
+                    up = true;
+                    break;
+                case 40: // down
+                    down = true;
+                    break;
+                case 39: // Right
+                    right = true;
+                    break;
+                case 37: // Left
+                    left = true;
+                    break;
+            }
+            return false;
+        });
+
+        // When a keyup is registered, stop moving the character in that direction
+        document.body.addEventListener('keyup', function(e) {
+            e.preventDefault();
+            switch (e.which) {
+                case 38: // up
+                    up = false;
+                    break;
+                case 40: // down
+                    down = false;
+                    break;
+                case 39: // Right
+                    right = false;
+                    break;
+                case 37: // Left
+                    left = false;
+                    break;
+            }
+            return false;
+        });
+
+        // After all images are loaded, start painting the game
+        allImagesLoaded.then(function() {
+
+            // These are the enemies
+            var enemies = [];
+            var weight = 0;
+
+            (function loop() {
+
+                // Always add an enemy if we've run out
+                if (enemies.length === 0) {
+                    addEnemy();
+                }
+
+                // Add enemies until there are 1000 - weight, about 20% of the frames
+                if (enemies.length < (1000 - weight) && Math.random() < .2) {
+                    addEnemy();
+                }
+
+                // Draw the background over everything, to clear out the previous frame
+                ctx.drawImage(bg, 0,0, width, height);
+
+                // Draw each enemy
+                for (var i = 0; i < enemies.length; i++) {
+                    var sprite = enemies[i];
+
+                    // Move it to the left
+                    sprite.x -= sprite.rate;
+
+                    // Check to see if it's run into our character
+                    const intersects = checkCollision(sprite, user);
+
+                    // If it did intersect, let's gain some weight
+                    if (intersects) {
+                        weight += WEIGHT_GAIN;
+                    }
+
+                    // If it intersected, or if it ran off the page, remove it
+                    if (intersects || sprite.x < 0) {
+                        enemies.splice(i, 1);
+
+                        // Go back, since removing an entry would make us skip the next one
+                        i--;
+
+                    } else {
+
+                        // Draw the enemy
+                        ctx.drawImage(sprite.img, sprite.x, sprite.y, 50, 50);
+                    }
+                }
+
+                // Slow the character down as he/she grows
+                var speedMultiplier = Math.sqrt(Math.sqrt(Math.sqrt(1 / (1 + weight))));
+
+                var size = USER_SIZE+weight;
+
+                // If the character is moving up or down, update the position and lose some weight
+                if (up && user.y - user.rate > 0) {
+                    user.y -= user.rate * speedMultiplier;
+                    weight *= WEIGHT_LOSS_MULTIPLIER;
+                } else if (down && (user.y + size) + user.rate < height) {
+                    user.y += user.rate * speedMultiplier;
+                    weight *= WEIGHT_LOSS_MULTIPLIER;
+                }
+
+                // If the character is moving left or right, update the position and lose some weight
+                if (left && user.x - user.rate > 0) {
+                    user.x -= user.rate * speedMultiplier;
+                    weight *= WEIGHT_LOSS_MULTIPLIER;
+                } else if (right && (user.x + size) + user.rate < width) {
+                    user.x += user.rate * speedMultiplier;
+                    weight *= WEIGHT_LOSS_MULTIPLIER;
+                }
+
+                // Draw the character
+                ctx.drawImage(user.img, user.x, user.y, size, size);
+
+                // Write the weight
+                ctx.font         = "48px serif";
+                ctx.fillStyle    = "rgba(255, 128, 128, 0.95)";
+                ctx.textBaseline = "hanging";
+                ctx.fillText(weight.toFixed(0) + ' lbs', width - 150, 20);
+
+                requestAnimationFrame(loop);
+
+            })();
+
+            function addEnemy(){
+                enemies.push({
+                    x: width,
+                    y: (Math.random()*height)|0,
+                    rate: Math.random()*10 + 5,
+                    img: enemy
+                });
+            }
+
+            function checkCollision(sprite, user) {
+                var size = USER_SIZE + weight;
+                return (
+                    sprite.x      < user.x + size &&
+                    sprite.x + 50 > user.x        &&
+                    sprite.y      < user.y + size &&
+                    sprite.y + 50 > user.y
+                );
+            }
+        });
+
+        function waitForImage(image) {
+            return new Promise(function(resolve, reject) {
+                image.onload = resolve;
+                image.onerror = reject;
+            });
+        }
+
+    </script>
+</body>
+</html>
